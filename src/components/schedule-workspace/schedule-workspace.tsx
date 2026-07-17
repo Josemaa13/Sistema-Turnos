@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   applyException,
   createCyclePreview,
@@ -11,10 +11,12 @@ import {
   type ScheduleCycle,
 } from "@/application";
 import {
+  CYCLE_WEEK_NUMBERS,
   DAYS,
   HISTORICAL_EMPLOYEE_NAMES,
   WEEK_1_ASSIGNMENT,
   materializeWeek,
+  type CycleWeekNumber,
   type Day,
   type EmployeeId,
   type PatternDay,
@@ -34,6 +36,7 @@ import {
 } from "./editor-reducer";
 
 type EditorMode = "AUTOMATIC" | "GUIDED" | "MANUAL_EXCEPTION";
+type PrintScope = "CURRENT" | "FULL";
 
 const MODE_LABELS: Readonly<Record<EditorMode, string>> = {
   AUTOMATIC: "Automático",
@@ -73,6 +76,18 @@ function dateLabels(startsOn: string, weekNumber: number): Readonly<Record<Day, 
   ) as Readonly<Record<Day, string>>;
 }
 
+function dateRangeLabel(startsOn: string, weekNumber: CycleWeekNumber): string {
+  const formatter = new Intl.DateTimeFormat("es-ES", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  const first = new Date(`${isoDateFor(startsOn, weekNumber, "MONDAY")}T00:00:00.000Z`);
+  const last = new Date(`${isoDateFor(startsOn, weekNumber, "SUNDAY")}T00:00:00.000Z`);
+  return `${formatter.format(first)} — ${formatter.format(last)}`;
+}
+
 export function ScheduleWorkspace() {
   const repository = useMemo(() => new LocalStorageScheduleRepository(), []);
   const [history, dispatch] = useReducer(
@@ -82,7 +97,7 @@ export function ScheduleWorkspace() {
   );
   const [cycle, setCycle] = useState<ScheduleCycle | null>(null);
   const [startsOn, setStartsOn] = useState(nextMonday);
-  const [weekNumber, setWeekNumber] = useState(1);
+  const [weekNumber, setWeekNumber] = useState<CycleWeekNumber>(1);
   const [mode, setMode] = useState<EditorMode>("AUTOMATIC");
   const [editing, setEditing] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeId | null>(null);
@@ -90,6 +105,9 @@ export function ScheduleWorkspace() {
   const [issues, setIssues] = useState<readonly ValidationIssue[]>([]);
   const [message, setMessage] = useState("Ciclo canónico preparado para generar.");
   const [busy, setBusy] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [printScope, setPrintScope] = useState<PrintScope | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void repository.listCycles().then((cycles) => {
@@ -99,25 +117,85 @@ export function ScheduleWorkspace() {
       if (!latest) return;
       setCycle(latest);
       setStartsOn(latest.startsOn);
-      dispatch({ type: "RESET", assignment: latest.week1Assignment });
+      dispatch({
+        type: "RESET",
+        assignment: latest.week1Assignment,
+        clearedWeekNumbers: latest.clearedWeekNumbers,
+      });
       setMessage(`Borrador recuperado · ${latest.startsOn}`);
     });
   }, [repository]);
 
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExportMenuOpen(false);
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !exportMenuRef.current?.contains(event.target)
+      ) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [exportMenuOpen]);
+
+  useEffect(() => {
+    if (!printScope) return;
+    const handleAfterPrint = () => setPrintScope(null);
+    window.addEventListener("afterprint", handleAfterPrint, { once: true });
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        window.print();
+      } catch {
+        setPrintScope(null);
+        setMessage("No se pudo abrir el diálogo de impresión.");
+      }
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, [printScope]);
+
   const generated = useMemo(
     () =>
       createCyclePreview({
-        week1Assignment: history.present,
+        week1Assignment: history.present.week1Assignment,
         rotationOrder: HISTORICAL_EMPLOYEE_NAMES,
       }),
     [history.present],
   );
-  const week = generated.weeks.find((item) => item.weekNumber === weekNumber);
-  const shifts = cycle
-    ? materializeEffectiveWeek(cycle, generated, weekNumber)
-    : week
-      ? materializeWeek(week, generated.patterns)
-      : [];
+  const effectiveCycle = cycle
+    ? {
+        ...cycle,
+        startsOn,
+        week1Assignment: history.present.week1Assignment,
+        clearedWeekNumbers: history.present.clearedWeekNumbers,
+    }
+    : null;
+  const shiftsForWeek = (targetWeekNumber: CycleWeekNumber) => {
+    if (history.present.clearedWeekNumbers.includes(targetWeekNumber)) return [];
+    if (effectiveCycle) {
+      return materializeEffectiveWeek(
+        effectiveCycle,
+        generated,
+        targetWeekNumber,
+      );
+    }
+    const targetWeek = generated.weeks.find(
+      (item) => item.weekNumber === targetWeekNumber,
+    );
+    return targetWeek ? materializeWeek(targetWeek, generated.patterns) : [];
+  };
+  const shifts = shiftsForWeek(weekNumber);
   const labels = dateLabels(startsOn, weekNumber);
   const issueDays = new Set(
     issues
@@ -130,7 +208,8 @@ export function ScheduleWorkspace() {
       {
         ...(cycle ? { cycleId: cycle.id } : {}),
         startsOn,
-        week1Assignment: history.present,
+        week1Assignment: history.present.week1Assignment,
+        clearedWeekNumbers: history.present.clearedWeekNumbers,
         rotationOrder: HISTORICAL_EMPLOYEE_NAMES,
         ...(cycle ? { exceptions: cycle.exceptions } : {}),
       },
@@ -156,6 +235,57 @@ export function ScheduleWorkspace() {
     setEditing(true);
     setIssues([]);
     setMessage(`${employeeId} asignado a ${patternId}; se ha conservado la asignación uno a uno.`);
+  };
+
+  const clearTransientEditorState = () => {
+    setIssues([]);
+    setSelectedEmployee(null);
+    setSelectedShift(null);
+  };
+
+  const handleClearWeek = () => {
+    const confirmed = window.confirm(
+      `Se eliminarán todos los turnos de la Semana ${weekNumber}. Las demás semanas no cambiarán.`,
+    );
+    if (!confirmed) return;
+    dispatch({ type: "CLEAR_WEEK", weekNumber });
+    setEditing(true);
+    clearTransientEditorState();
+    setMessage(`Semana ${weekNumber} limpiada. Puedes deshacer la operación mientras editas.`);
+  };
+
+  const handleClearAll = () => {
+    const confirmed = window.confirm(
+      "Se eliminarán los turnos de las 10 semanas. Esta acción podrá deshacerse mientras continúes editando el borrador.",
+    );
+    if (!confirmed) return;
+    dispatch({ type: "CLEAR_ALL" });
+    setEditing(true);
+    clearTransientEditorState();
+    setMessage("Se han limpiado las 10 semanas. La fecha de inicio y los metadatos se conservan.");
+  };
+
+  const handleRegenerate = () => {
+    dispatch({ type: "REGENERATE" });
+    clearTransientEditorState();
+    setMessage("Ciclo completo regenerado desde la asignación canónica de la Semana 1.");
+  };
+
+  const handleUndo = () => {
+    dispatch({ type: "UNDO" });
+    clearTransientEditorState();
+    setMessage("Se ha deshecho la última modificación del ciclo.");
+  };
+
+  const handleRedo = () => {
+    dispatch({ type: "REDO" });
+    clearTransientEditorState();
+    setMessage("Se ha rehecho la última modificación del ciclo.");
+  };
+
+  const startPrint = (scope: PrintScope) => {
+    setExportMenuOpen(false);
+    setPrintScope(scope);
   };
 
   const handleValidate = () =>
@@ -222,7 +352,9 @@ export function ScheduleWorkspace() {
   };
 
   return (
-    <main className="app-shell">
+    <main
+      className={`app-shell print-scope-${printScope?.toLowerCase() ?? "none"}`}
+    >
       <header className="app-header">
         <div className="brand-mark" aria-hidden="true"><span>ST</span></div>
         <div className="brand-copy">
@@ -255,9 +387,54 @@ export function ScheduleWorkspace() {
           <button className="button ghost" type="button" onClick={() => setEditing((value) => !value)}>
             {editing ? "Cerrar edición" : "Editar semana"}
           </button>
+          <button
+            className="button danger"
+            type="button"
+            disabled={busy || history.present.clearedWeekNumbers.includes(weekNumber)}
+            onClick={handleClearWeek}
+          >
+            Limpiar semana
+          </button>
+          <button
+            className="button danger"
+            type="button"
+            disabled={busy || history.present.clearedWeekNumbers.length === 10}
+            onClick={handleClearAll}
+          >
+            Limpiar todas
+          </button>
           <button className="button ghost" type="button" disabled={busy} onClick={handleSave}>Guardar borrador</button>
           <button className="button ghost" type="button" disabled={busy} onClick={handleValidate}>Validar</button>
-          <button className="button dark" type="button" onClick={() => window.print()}>Exportar</button>
+          <div className="export-menu" ref={exportMenuRef}>
+            <button
+              className="button dark"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={exportMenuOpen}
+              aria-controls="export-options"
+              onClick={() => setExportMenuOpen((current) => !current)}
+            >
+              Exportar
+            </button>
+            {exportMenuOpen && (
+              <div className="export-options" id="export-options" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => startPrint("CURRENT")}
+                >
+                  Exportar semana actual
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => startPrint("FULL")}
+                >
+                  Exportar ciclo completo
+                </button>
+              </div>
+            )}
+          </div>
           <button className="button primary" type="button" disabled={busy} onClick={handlePublish}>Publicar</button>
         </div>
       </section>
@@ -275,12 +452,13 @@ export function ScheduleWorkspace() {
       </section>
 
       <nav className="week-tabs" aria-label="Semanas del ciclo">
-        {Array.from({ length: 10 }, (_, index) => index + 1).map((item) => (
+        {CYCLE_WEEK_NUMBERS.map((item) => (
           <button
             type="button"
             key={item}
             className={weekNumber === item ? "is-active" : ""}
             onClick={() => setWeekNumber(item)}
+            aria-label={`Semana ${item}`}
             aria-current={weekNumber === item ? "page" : undefined}
           >
             <span>S</span>{item}
@@ -319,15 +497,15 @@ export function ScheduleWorkspace() {
             <header>
               <div><span>{MODE_LABELS[mode]}</span><h2>Editar ciclo</h2></div>
               <div className="history-actions">
-                <button type="button" disabled={history.past.length === 0} onClick={() => dispatch({ type: "UNDO" })} aria-label="Deshacer">↶</button>
-                <button type="button" disabled={history.future.length === 0} onClick={() => dispatch({ type: "REDO" })} aria-label="Rehacer">↷</button>
+                <button type="button" disabled={history.past.length === 0} onClick={handleUndo} aria-label="Deshacer">↶</button>
+                <button type="button" disabled={history.future.length === 0} onClick={handleRedo} aria-label="Rehacer">↷</button>
               </div>
             </header>
             {mode === "AUTOMATIC" && (
               <>
                 <p className="sidebar-intro">Asigna la Semana 1. Al cambiar un empleado, el sistema intercambia su patrón anterior para conservar diez asignaciones únicas.</p>
                 <AssignmentEditor
-                  assignment={history.present}
+                  assignment={history.present.week1Assignment}
                   employees={HISTORICAL_EMPLOYEE_NAMES}
                   disabled={false}
                   onAssign={handleAssign}
@@ -335,7 +513,7 @@ export function ScheduleWorkspace() {
                 <button
                   type="button"
                   className="button primary full-width"
-                  onClick={() => setMessage("Ciclo completo regenerado desde la Semana 1.")}
+                  onClick={handleRegenerate}
                 >
                   Generar ciclo
                 </button>
@@ -364,6 +542,35 @@ export function ScheduleWorkspace() {
           </aside>
         )}
       </div>
+
+      {printScope === "FULL" && (
+        <section
+          className="full-cycle-print"
+          aria-label="Vista de impresión del ciclo completo"
+        >
+          {CYCLE_WEEK_NUMBERS.map((item) => (
+            <article className="print-week" key={item}>
+              <header className="print-week-heading">
+                <span>Cuadrante de 10 semanas</span>
+                <h2>Semana {item}</h2>
+                <p>{dateRangeLabel(startsOn, item)}</p>
+              </header>
+              <div className="schedule-card">
+                <ScheduleGrid
+                  ariaLabel={`Cuadrante semanal de la Semana ${item} para impresión`}
+                  shifts={shiftsForWeek(item)}
+                  dateLabels={dateLabels(startsOn, item)}
+                  selectedEmployee={null}
+                  issueDays={new Set<Day>()}
+                  canEditException={false}
+                  onSelectEmployee={() => undefined}
+                  onSelectShift={() => undefined}
+                />
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
 
       {selectedShift && mode === "MANUAL_EXCEPTION" && (
         <ExceptionEditor

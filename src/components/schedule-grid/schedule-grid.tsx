@@ -13,6 +13,7 @@ const DAY_LABELS: Readonly<Record<Day, string>> = {
 type DisplayShift = ScheduledShift & { readonly exceptionId?: string };
 
 interface ScheduleGridProps {
+  readonly ariaLabel?: string;
   readonly shifts: readonly DisplayShift[];
   readonly dateLabels: Readonly<Record<Day, string>>;
   readonly selectedEmployee: string | null;
@@ -58,6 +59,7 @@ function ShiftCard({
 }
 
 export function ScheduleGrid({
+  ariaLabel = "Cuadrante semanal",
   shifts,
   dateLabels,
   selectedEmployee,
@@ -67,7 +69,7 @@ export function ScheduleGrid({
   onSelectShift,
 }: ScheduleGridProps) {
   return (
-    <div className="schedule-grid" aria-label="Cuadrante semanal">
+    <div className="schedule-grid" aria-label={ariaLabel}>
       {DAYS.map((day) => {
         const dayShifts = shifts.filter((shift) => shift.day === day);
         const groups = [

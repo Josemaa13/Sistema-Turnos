@@ -1,4 +1,5 @@
 import type {
+  CycleWeekNumber,
   EmployeeId,
   GeneratedCycle,
   PatternId,
@@ -14,6 +15,7 @@ export interface ScheduleCycle {
   readonly startsOn: string;
   readonly status: CycleStatus;
   readonly week1Assignment: WeekAssignment;
+  readonly clearedWeekNumbers: readonly CycleWeekNumber[];
   readonly rotationOrder: readonly EmployeeId[];
   readonly patternIds: readonly PatternId[];
   readonly exceptions: readonly ScheduleException[];
@@ -24,6 +26,7 @@ export interface ScheduleCycle {
 export interface PublishedSchedulePayload {
   readonly generatedCycle: GeneratedCycle;
   readonly exceptions: readonly ScheduleException[];
+  readonly clearedWeekNumbers: readonly CycleWeekNumber[];
 }
 
 export interface PublishedScheduleSnapshot {
