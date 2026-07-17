@@ -3,6 +3,7 @@ import type {
   ScheduleCycle,
 } from "@/application/models";
 import type { ScheduleRepository } from "@/application/ports";
+import { normalizeClearedWeekNumbers } from "@/domain/scheduling";
 
 interface StoredScheduleData {
   readonly cycles: readonly ScheduleCycle[];
@@ -18,7 +19,24 @@ export class LocalStorageScheduleRepository implements ScheduleRepository {
     const raw = globalThis.localStorage?.getItem(this.storageKey);
     if (!raw) return EMPTY_DATA;
     try {
-      return JSON.parse(raw) as StoredScheduleData;
+      const parsed = JSON.parse(raw) as StoredScheduleData;
+      return {
+        cycles: (parsed.cycles ?? []).map((cycle) => ({
+          ...cycle,
+          clearedWeekNumbers: normalizeClearedWeekNumbers(
+            cycle.clearedWeekNumbers,
+          ),
+        })),
+        snapshots: (parsed.snapshots ?? []).map((snapshot) => ({
+          ...snapshot,
+          payload: {
+            ...snapshot.payload,
+            clearedWeekNumbers: normalizeClearedWeekNumbers(
+              snapshot.payload.clearedWeekNumbers,
+            ),
+          },
+        })),
+      };
     } catch {
       return EMPTY_DATA;
     }

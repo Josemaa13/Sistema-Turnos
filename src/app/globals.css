@@ -75,8 +75,35 @@ button { color: inherit; }
 .button:disabled { cursor: not-allowed; opacity: .45; }
 .button.dark { color: white; background: #28332f; border-color: #28332f; }
 .button.primary { color: white; background: var(--forest-2); border-color: var(--forest-2); }
+.button.danger { color: var(--danger); background: #fff8f7; border-color: #e8b6b3; }
 .button.ghost { background: transparent; }
 .full-width { width: 100%; margin-top: 14px; }
+.export-menu { position: relative; }
+.export-options {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  min-width: 215px;
+  padding: 5px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgb(23 33 29 / 16%);
+}
+.export-options button {
+  padding: 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+.export-options button:hover, .export-options button:focus-visible { background: var(--mint); }
+.full-cycle-print { display: none; }
 
 .cycle-heading {
   display: flex;
@@ -225,4 +252,21 @@ button { color: inherit; }
   .schedule-grid { min-width: 0; print-color-adjust: exact; }
   .shift-group { padding: 5px; }
   .shift-card { min-height: 23px; padding: 3px 5px; }
+  .print-scope-full > :not(.full-cycle-print) { display: none !important; }
+  .print-scope-full > .full-cycle-print { display: block; }
+  .print-week {
+    break-after: page;
+    page-break-after: always;
+  }
+  .print-week:last-child { break-after: auto; page-break-after: auto; }
+  .print-week-heading { padding: 0 0 9px; }
+  .print-week-heading span {
+    color: var(--forest-2);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .print-week-heading h2 { margin: 3px 0; font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+  .print-week-heading p { margin: 0; color: var(--muted); font-size: 11px; }
 }

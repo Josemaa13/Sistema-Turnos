@@ -3,7 +3,12 @@ import type {
   ScheduleCycle,
 } from "@/application/models";
 import type { ScheduleRepository } from "@/application/ports";
-import type { PatternDay, ScheduleException, WeekAssignment } from "@/domain/scheduling";
+import {
+  normalizeClearedWeekNumbers,
+  type PatternDay,
+  type ScheduleException,
+  type WeekAssignment,
+} from "@/domain/scheduling";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 interface CycleAssignmentRow {
@@ -30,6 +35,7 @@ interface CycleRow {
   readonly status: ScheduleCycle["status"];
   readonly rotation_order: readonly string[];
   readonly pattern_ids: readonly ScheduleCycle["patternIds"][number][];
+  readonly cleared_week_numbers?: readonly number[];
   readonly created_at: string;
   readonly updated_at: string;
   readonly cycle_assignments?: readonly CycleAssignmentRow[];
@@ -56,6 +62,7 @@ function cycleFromRow(row: CycleRow): ScheduleCycle {
     templateId: row.template_id,
     startsOn: row.starts_on,
     status: row.status,
+    clearedWeekNumbers: normalizeClearedWeekNumbers(row.cleared_week_numbers),
     rotationOrder: row.rotation_order,
     patternIds: row.pattern_ids,
     week1Assignment: Object.fromEntries(
@@ -84,6 +91,7 @@ export class SupabaseScheduleRepository implements ScheduleRepository {
       status: cycle.status,
       rotation_order: cycle.rotationOrder,
       pattern_ids: cycle.patternIds,
+      cleared_week_numbers: cycle.clearedWeekNumbers,
       created_at: cycle.createdAt,
       updated_at: cycle.updatedAt,
     });
@@ -166,7 +174,13 @@ export class SupabaseScheduleRepository implements ScheduleRepository {
       id: String(row.id),
       cycleId: String(row.cycle_id),
       version: Number(row.version),
-      payload: row.payload as PublishedScheduleSnapshot["payload"],
+      payload: {
+        ...(row.payload as PublishedScheduleSnapshot["payload"]),
+        clearedWeekNumbers: normalizeClearedWeekNumbers(
+          (row.payload as Partial<PublishedScheduleSnapshot["payload"]>)
+            .clearedWeekNumbers,
+        ),
+      },
       publishedAt: String(row.published_at),
     }));
   }

@@ -8,7 +8,10 @@ export const DAYS = [
   "SUNDAY",
 ] as const;
 
+export const CYCLE_WEEK_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
 export type Day = (typeof DAYS)[number];
+export type CycleWeekNumber = (typeof CYCLE_WEEK_NUMBERS)[number];
 export type EmployeeId = string;
 export type PatternId = `P${string}`;
 export type ShiftKind = "FREE" | "MORNING" | "AFTERNOON";

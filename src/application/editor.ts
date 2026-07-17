@@ -1,6 +1,7 @@
 import {
   BASE_PATTERNS,
   generateCycle,
+  isCycleWeekNumber,
   matchPatternByFreeDays,
   materializeWeek,
   type Day,
@@ -48,6 +49,12 @@ export function materializeEffectiveWeek(
   generated: GeneratedCycle,
   weekNumber: number,
 ): readonly (ScheduledShift & { readonly exceptionId?: string })[] {
+  if (
+    isCycleWeekNumber(weekNumber) &&
+    cycle.clearedWeekNumbers.includes(weekNumber)
+  ) {
+    return [];
+  }
   const week = generated.weeks.find((item) => item.weekNumber === weekNumber);
   if (!week) return [];
   const startsOn = new Date(`${cycle.startsOn}T00:00:00.000Z`);

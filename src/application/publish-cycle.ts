@@ -34,7 +34,11 @@ export async function publishCycle(
     id: services.createId(),
     cycleId,
     version: Math.max(0, ...previous.map((item) => item.version)) + 1,
-    payload: { generatedCycle, exceptions: stored.exceptions },
+    payload: {
+      generatedCycle,
+      exceptions: stored.exceptions,
+      clearedWeekNumbers: stored.clearedWeekNumbers,
+    },
     publishedAt,
   };
   const cycle: ScheduleCycle = {

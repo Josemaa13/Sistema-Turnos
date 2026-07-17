@@ -1,7 +1,9 @@
 import {
   BASE_PATTERNS,
   generateCycle,
+  normalizeClearedWeekNumbers,
   validateCycle,
+  type CycleWeekNumber,
   type EmployeeId,
   type WeekAssignment,
 } from "@/domain/scheduling";
@@ -18,6 +20,7 @@ export interface CreateCycleInput {
   readonly startsOn: string;
   readonly week1Assignment: WeekAssignment;
   readonly rotationOrder: readonly EmployeeId[];
+  readonly clearedWeekNumbers?: readonly CycleWeekNumber[];
   readonly templateId?: string;
 }
 
@@ -38,6 +41,7 @@ export async function createCycle(
     );
   }
 
+  const clearedWeekNumbers = normalizeClearedWeekNumbers(input.clearedWeekNumbers);
   const generated = generateCycle({
     week1Assignment: input.week1Assignment,
     patterns: BASE_PATTERNS,
@@ -55,6 +59,7 @@ export async function createCycle(
     startsOn: input.startsOn,
     status: "DRAFT",
     week1Assignment: input.week1Assignment,
+    clearedWeekNumbers,
     rotationOrder: input.rotationOrder,
     patternIds: BASE_PATTERNS.map((pattern) => pattern.id),
     exceptions: [],

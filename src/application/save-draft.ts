@@ -1,7 +1,9 @@
 import {
   BASE_PATTERNS,
   generateCycle,
+  normalizeClearedWeekNumbers,
   validateCycle,
+  type CycleWeekNumber,
   type EmployeeId,
   type ScheduleException,
   type WeekAssignment,
@@ -20,6 +22,7 @@ export interface SaveDraftInput {
   readonly startsOn: string;
   readonly week1Assignment: WeekAssignment;
   readonly rotationOrder: readonly EmployeeId[];
+  readonly clearedWeekNumbers?: readonly CycleWeekNumber[];
   readonly exceptions?: readonly ScheduleException[];
 }
 
@@ -28,6 +31,16 @@ function assignmentsEqual(left: WeekAssignment, right: WeekAssignment): boolean 
   return (
     keys.length === Object.keys(right).length &&
     keys.every((key) => left[key as keyof WeekAssignment] === right[key as keyof WeekAssignment])
+  );
+}
+
+function weekNumbersEqual(
+  left: readonly CycleWeekNumber[],
+  right: readonly CycleWeekNumber[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
   );
 }
 
@@ -42,9 +55,15 @@ export async function saveCycleDraft(
   const existing = await repository.findCycle(input.cycleId);
   if (!existing) throw new CycleNotFoundError(input.cycleId);
 
+  const clearedWeekNumbers =
+    input.clearedWeekNumbers === undefined
+      ? existing.clearedWeekNumbers
+      : normalizeClearedWeekNumbers(input.clearedWeekNumbers);
+
   const changedMaster =
     existing.startsOn !== input.startsOn ||
     !assignmentsEqual(existing.week1Assignment, input.week1Assignment) ||
+    !weekNumbersEqual(existing.clearedWeekNumbers, clearedWeekNumbers) ||
     existing.rotationOrder.some(
       (employeeId, index) => input.rotationOrder[index] !== employeeId,
     );
@@ -54,6 +73,7 @@ export async function saveCycleDraft(
         startsOn: input.startsOn,
         week1Assignment: input.week1Assignment,
         rotationOrder: input.rotationOrder,
+        clearedWeekNumbers,
         templateId: existing.templateId,
       },
       repository,
@@ -72,6 +92,7 @@ export async function saveCycleDraft(
     ...existing,
     startsOn: input.startsOn,
     week1Assignment: input.week1Assignment,
+    clearedWeekNumbers,
     rotationOrder: input.rotationOrder,
     exceptions: input.exceptions ?? existing.exceptions,
     status: changedMaster ? "DRAFT" : existing.status,

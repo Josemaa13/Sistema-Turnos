@@ -3,7 +3,9 @@ import {
   applyException,
   createCycle,
   generateStoredCycle,
+  materializeEffectiveWeek,
   publishCycle,
+  saveCycleDraft,
   validateStoredCycle,
   type ApplicationServices,
 } from "@/application";
@@ -65,6 +67,7 @@ describe("flujo de ciclo", () => {
     const first = await publishCycle(draft.id, repository, services);
     expect(first.snapshot.version).toBe(1);
     expect(first.snapshot.payload.exceptions).toEqual([]);
+    expect(first.snapshot.payload.clearedWeekNumbers).toEqual([]);
 
     await applyException(
       {
@@ -121,5 +124,37 @@ describe("flujo de ciclo", () => {
     expect(result.warning).toContain("Excepción manual registrada");
     expect(result.cycle.exceptions).toHaveLength(1);
     expect(BASE_PATTERNS).toEqual(canonicalBefore);
+  });
+
+  it("guarda semanas limpiadas sin modificar la generación canónica", async () => {
+    const draft = await createCycle(
+      {
+        startsOn: "2026-07-20",
+        week1Assignment: WEEK_1_ASSIGNMENT,
+        rotationOrder: HISTORICAL_EMPLOYEE_NAMES,
+      },
+      repository,
+      services,
+    );
+    const updated = await saveCycleDraft(
+      {
+        cycleId: draft.id,
+        startsOn: draft.startsOn,
+        week1Assignment: draft.week1Assignment,
+        rotationOrder: draft.rotationOrder,
+        clearedWeekNumbers: [4],
+      },
+      repository,
+      services,
+    );
+    const generated = generateStoredCycle(updated);
+
+    expect(materializeEffectiveWeek(updated, generated, 4)).toEqual([]);
+    expect(materializeEffectiveWeek(updated, generated, 5)).not.toHaveLength(0);
+    expect(generated.weeks.find((week) => week.weekNumber === 4)?.assignments)
+      .toHaveProperty("P01");
+
+    const published = await publishCycle(updated.id, repository, services);
+    expect(published.snapshot.payload.clearedWeekNumbers).toEqual([4]);
   });
 });
